@@ -132,10 +132,17 @@ SYMBOL should be a function or variable name, given as a string or symbol.
 TYPE can be nil for functions, defvar for variables, or defface for faces.
 Returns the source code as a string, or nil if the definition is not found."
   (when-let* ((callable (intern-soft symbol))
-              (save-silently t)         ; suppresses message in
-                                        ; find-file-noselect
-              (vc-follow-symlinks t)     ; don't ask, we're not editing.
-              (buffer-point (find-definition-noselect callable type)))
+              (save-silently t)         ; suppresses message in find-file-noselect
+              (vc-follow-symlinks t)    ; don't ask, we're not editing.
+              ;; Prevent minibuffer prompts for missing C source files
+              (buffer-point (cl-letf (((symbol-function 'read-file-name)
+                                       (lambda (&rest _) (signal 'quit nil)))
+                                      ((symbol-function 'read-directory-name)
+                                       (lambda (&rest _) (signal 'quit nil))))
+                              (condition-case nil
+                                  (find-definition-noselect callable type)
+                                (quit nil)   ; catch our signal
+                                (error nil)))))
     (with-current-buffer (car buffer-point)
       (goto-char (cdr buffer-point))
       (buffer-substring-no-properties
@@ -168,7 +175,7 @@ Returns the source code as a string, or nil if the definition is not found."
 
 (defun ragmacs--gptel-variable-source (symbol)
   (when-let ((symbol (intern-soft symbol)))
-      (ragmacs--gptel-source symbol 'defvar)))
+    (ragmacs--gptel-source symbol 'defvar)))
 
 (defun ragmacs--gptel-function-documentation (symbol)
   (when-let ((symbol (intern-soft symbol)))
@@ -176,7 +183,7 @@ Returns the source code as a string, or nil if the definition is not found."
 
 (defun ragmacs--gptel-variable-documentation (symbol)
   (when-let ((symbol (intern-soft symbol)))
-    (custom-variable-documentation symbol)))
+    (documentation-property symbol 'variable-documentation)))
 
 (defun ragmacs--gptel-variable-global-value (symbol)
   (when-let ((symbol (intern-soft symbol)))
@@ -193,10 +200,10 @@ Returns the source code as a string, or nil if the definition is not found."
    :name "elisp_eval"
    :confirm t
    :include t
-   :category "introspection"
-   :args '(( :name "expression"
-             :type string
-             :description "A single elisp sexp to evaluate."))
+   :category "emacs"
+   :args '((:name "expression"
+            :type string
+            :description "A single elisp sexp to evaluate."))
    :description "Evaluate Elisp EXPRESSION and return result.
 EXPRESSION can be anything will evaluate.  It can be a function call, a
 variable, a quasi-quoted expression.  The only requirement is that only
@@ -223,10 +230,10 @@ demonstrate something to the user.")
    :function #'ragmacs--gptel-symbolp
    :name "symbol_exists"
    :include t
-   :category "introspection"
-   :args '(( :name "symbol"
-             :type string
-             :description "A symbol that will be in `obarray' if they \
+   :category "emacs"
+   :args '((:name "symbol"
+            :type string
+            :description "A symbol that will be in `obarray' if they \
 actually exist"))
    :description "Check if SYMBOL exists in `obarray'. \
 Returns the name of a symbol if that symbol has been interned or \"nil\"
@@ -239,7 +246,7 @@ extremely cheap to call.")
    :function #'ragmacs--gptel-load-paths
    :name "load_paths"
    :include t
-   :category "introspection"
+   :category "emacs"
    :args nil
    :description "Return the users load paths.
 This can reveal information about what packages the user has available.
@@ -249,28 +256,28 @@ manager.  The location of default packages can tell you about the user's
 Emacs installation.")
   "Retrieve load paths")
 
- (defvar ragmacs-features
-   (gptel-make-tool
-    :function #'ragmacs--gptel-features
-    :name "features"
-    :include t
-    :category "introspection"
-    :args nil
-    :description "Return the list of loaded features.
+(defvar ragmacs-features
+  (gptel-make-tool
+   :function #'ragmacs--gptel-features
+   :name "features"
+   :include t
+   :category "emacs"
+   :args nil
+   :description "Return the list of loaded features.
 This tool can be used to see what packages are already loaded in the
 running Emacs.  Use this to understand the user's typical set of
 packages and typical usage patterns.  Especially if the solution depends
 on the user's choice of packages, you will want to look at the features
 and load paths.")
 
-   "Retreive a list of all loaded features.")
+  "Retreive a list of all loaded features.")
 
 (defvar ragmacs-manuals
   (gptel-make-tool
    :function #'ragmacs--gptel-manual-names
    :name "manual_names"
    :include t
-   :category "introspection"
+   :category "emacs"
    :args nil
    :description "Return a list of available manual names.
 Call this tool in order to determine if a particular manual is
@@ -293,10 +300,10 @@ used liberally.")
    :function #'ragmacs--gptel-manual-list-nodes
    :name "manual_nodes"
    :include t
-   :category "introspection"
-   :args '(( :name "manual"
-             :type string
-             :description "The name of the manual.
+   :category "emacs"
+   :args '((:name "manual"
+            :type string
+            :description "The name of the manual.
 Examples include \"cl\", \"elisp\", or \"transient\"."))
    :description "Retrieve a listing of topic nodes within MANUAL.
 Return value is a list of all nodes in MANUAL.  The list of topic nodes
@@ -323,14 +330,14 @@ in the Elisp manual.")
    :function #'ragmacs--gptel-manual-node-contents
    :name "manual_node_contents"
    :include t
-   :category "introspection"
-   :args '(( :name "manual_name"
-             :type string
-             :description "The name of MANUAL.
+   :category "emacs"
+   :args '((:name "manual_name"
+            :type string
+            :description "The name of MANUAL.
 Examples manuals include \"cl\", \"elisp\", or \"transient\".")
-           ( :name "node"
-             :type string
-             :description "The name of the NODE in a MANUAL.
+           (:name "node"
+            :type string
+            :description "The name of the NODE in a MANUAL.
 Example nodes from the elisp manual include \"Records\" or \"Sequences
 Arrays \ Vectors\"."))
    :description "Retrieve the contents of NODE in MANUAL.
@@ -361,10 +368,10 @@ style language anc content.")
    :function #'ragmacs--gptel-featurep
    :name "features"
    :include t
-   :category "introspection"
-   :args '(( :name "feature"
-             :type string
-             :description "FEATURE to look for."))
+   :category "emacs"
+   :args '((:name "feature"
+            :type string
+            :description "FEATURE to look for."))
    :description "Check if FEATURE is loaded or available.
 Returns non-nil if FEATURE is loaded or available for loading.  Not all
 users have all features loaded.  Before recommending the user to try a
@@ -379,10 +386,10 @@ would obtain from MELPA and Non-GNU ELPA etc.")
    :function #'ragmacs--gptel-library-source
    :name "library_source"
    :include t
-   :category "introspection"
-   :args '(( :name "library"
-             :type string
-             :description "LIBRARY to look for."))
+   :category "emacs"
+   :args '((:name "library"
+            :type string
+            :description "LIBRARY to look for."))
    :description "Read the source code for LIBRARY.
 LIBRARY can either be a C or Elisp source code library.  Examples would
 include \"transient\" or \"fns.c\".  When looking for C libraries, they
@@ -405,10 +412,10 @@ recursively look them up.")
    :name "symbol_manual_section"
    :include t
    :function #'ragmacs--gptel-symbol-in-manual
-   :category "introspection"
-   :args '(( :name "symbol"
-             :type string
-             :description "Name of a SYMBOL, such as \
+   :category "emacs"
+   :args '((:name "symbol"
+            :type string
+            :description "Name of a SYMBOL, such as \
 \"find-file-noselect\"."))
    :description "Returns contents of manual node for SYMBOL.
 SYMBOL can be a function, macro, defcustom, or defvar.  If symbol is not
@@ -428,10 +435,10 @@ docstring next and finally try to complete the prefix of the symbol .")
    :name "function_source"
    :include t
    :function #'ragmacs--gptel-function-source
-   :category "introspection"
-   :args '(( :name "function"
-             :type string
-             :description "Name of a FUNCTION, such as \
+   :category "emacs"
+   :args '((:name "function"
+            :type string
+            :description "Name of a FUNCTION, such as \
 \"find-file-noselect\"."))
    :description "Returns the source code for FUNCTION.
 Return the source code for FUNCTION.  FUNCTION can be a function or
@@ -456,11 +463,11 @@ using `library_source'.  This tool is cheap.  Use it liberally.")
   (gptel-make-tool
    :name "variable_source"
    :function #'ragmacs--gptel-variable-source
-   :category "introspection"
+   :category "emacs"
    :include t
-   :args '(( :name "variable"
-             :type string
-             :description "Name of a VARIABLE, such as \
+   :args '((:name "variable"
+            :type string
+            :description "Name of a VARIABLE, such as \
 \"last-kbd-macro\"."))
    :description "Returns the source code for VARIABLE.
 Return value is the source code for VARIABLE.  VARIABLE can be a defvar
@@ -477,16 +484,16 @@ Call it liberally.")
   "Retreive the source for a variable.")
 
 (defvar ragmacs-variable-value (gptel-make-tool
-         :name "variable_value"
-         :function #'ragmacs--gptel-variable-global-value
-         :category "introspection"
-         :confirm t
-         :include t
-         :args '(( :name "variable"
-                   :type string
-                   :description "Name of a VARIABLE, such as \
+                                :name "variable_value"
+                                :function #'ragmacs--gptel-variable-global-value
+                                :category "emacs"
+                                :confirm t
+                                :include t
+                                :args '((:name "variable"
+                                         :type string
+                                         :description "Name of a VARIABLE, such as \
 \"last-kbd-macro\"."))
-         :description "Returns the global value for VARIABLE.
+                                :description "Returns the global value for VARIABLE.
 Return value is the global (not buffer-local) value for VARIABLE.
 VARIABLE can be a defvar or defcustom.  Use this when behavior depends
 on the state of a variable or you want to infer if a package has indeed
@@ -505,11 +512,11 @@ contained.")
   (gptel-make-tool
    :name "function_documentation"
    :function #'ragmacs--gptel-function-documentation
-   :category "introspection"
+   :category "emacs"
    :include t
-   :args '(( :name "function"
-             :type string
-             :description "Name of a FUNCTION, such as \"mapcar\"."))
+   :args '((:name "function"
+            :type string
+            :description "Name of a FUNCTION, such as \"mapcar\"."))
    :description "Returns the docstring for FUNCTION.
 Return value is a docstring for FUNCTION.  FUNCTION can be a function or
 macro.  Can be used to infer the purpose or correct forms for arguments
@@ -522,11 +529,11 @@ This tool is very cheap and very fast.  Call it very liberally.")
   (gptel-make-tool
    :name "variable_documentation"
    :function #'ragmacs--gptel-variable-documentation
-   :category "introspection"
+   :category "emacs"
    :include t
-   :args '(( :name "variable"
-             :type string
-             :description "Name of a VARIABLE, such as \
+   :args '((:name "variable"
+            :type string
+            :description "Name of a VARIABLE, such as \
 \"cursor-type\"."))
    :description "Returns the docstring VARIABLE.
 Return value is a docstring for VARIABLE.  VARIABLE can be a defcustom
@@ -537,14 +544,14 @@ cheap and very fast.  Call it very liberally.")
   "Retrieve variable documentation")
 
 (defvar ragmacs-function-completions (gptel-make-tool
-  :name "function_completions"
-  :function #'ragmacs--gptel-function-completions
-  :category "introspection"
-  :include t
-  :args '(( :name "function_prefix"
-            :type string
-            :description "FUNCTION_PREFIX of functions you are searching for."))
-  :description "Returns a list of functions beginning with FUNCTION_PREFIX.
+                                      :name "function_completions"
+                                      :function #'ragmacs--gptel-function-completions
+                                      :category "emacs"
+                                      :include t
+                                      :args '((:name "function_prefix"
+                                               :type string
+                                               :description "FUNCTION_PREFIX of functions you are searching for."))
+                                      :description "Returns a list of functions beginning with FUNCTION_PREFIX.
 Use this to prepare for subsequent calls to `function_source' or
 `function_documentation' to look up the source code or docstrings of
 multiple functions.  You can also use this tool to verify which
@@ -552,18 +559,18 @@ functions and macros can be called.  If you want to search for all
 functions defined in foo and its sub-packages, you this tool is a very
 good starting point.  This tool is very cheap and very fast.  Call it
 very liberally.")
- "Retrieve completions for a function prefix")
+  "Retrieve completions for a function prefix")
 
 
 (defvar ragmacs-command-completions
   (gptel-make-tool
    :name "command_completions"
    :function #'ragmacs--gptel-command-completions
-   :category "introspection"
+   :category "emacs"
    :include t
-   :args '(( :name "command_prefix"
-             :type string
-             :description "COMMAND_PREFIX of commands you are searching for."))
+   :args '((:name "command_prefix"
+            :type string
+            :description "COMMAND_PREFIX of commands you are searching for."))
    :description "Returns a list of commands beginning with COMMAND_PREFIX.
 This tool is very similar to `function_completions' but will only return
 commands that can be called interactively.  This can tell you about the
@@ -574,15 +581,15 @@ and very fast.  Call it very liberally.")
   "Retrieve completions for a command prefix.")
 
 (defvar ragmacs-variable-completions
- (gptel-make-tool
-  :name "variable_completions"
-  :function #'ragmacs--gptel-variable-completions
-  :category "introspection"
-  :include t
-  :args '(( :name "variable_prefix"
+  (gptel-make-tool
+   :name "variable_completions"
+   :function #'ragmacs--gptel-variable-completions
+   :category "emacs"
+   :include t
+   :args '((:name "variable_prefix"
             :type string
             :description "VARIABLE_PREFIX of variables you are searching for."))
-  :description "Returns a list of variables beginning with VARIABLE_PREFIX.
+   :description "Returns a list of variables beginning with VARIABLE_PREFIX.
 The variables returned include defvars and custom variables.  Defvars
 tell you what states a package relies on for its implementation.
 Defcustom tells you what configuration options the user should know
@@ -594,79 +601,7 @@ Use this to prepare for subsequent calls to `variable_source' or
 multiple variables.  If you want to search for all variables defined
 under a prefix, you this tool is a very good starting point.  This tool
 is very cheap and very fast.  Call it very liberally.")
- "Retreive completions for a variable.")
-
-;; The Remaining tools below are only instructive to developing other tools.
-
-(defun ragmacs--gptel-simulate-error ()
-  (error "This is a simulated error message.  OMGWTF."))
-
-(defun ragmacs--gptel-coerce-nil ()
-  nil)
-
-(defun ragmacs--gptel-all-arg-types (object string array null true false enum)
-  (message "object: %S\nstring: %S\narray: %S\nnull: %S\ntrue: %S\nfalse: %S\n\
-enum: %S"
-           object string array null true false enum))
-
-(defun ragmacs--gptel-async-tool (callback later-val)
-  (sit-for 2)
-  (funcall callback (format "Do it %s." later-val)))
-
-(defvar ragmacs-simulate-error
-  (gptel-make-tool
-   :name "simulate_error"
-   :function #'ragmacs--gptel-simulate-error
-   :category "testing"
-   :args nil
-   :description "A tool that can simulate an error.
-This tool always returns an error.  It is useful for testing error
-behavior.  When the user asks you to use this tool, you should
-absolutely use it.")
-  "Test tool designed to demonstrate a tool call that errors.")
-
-(defvar ragmacs-coerce-nil
-  (gptel-make-tool
-   :name "coerce_nil"
-   :function #'ragmacs--gptel-coerce-nil
-   :category "testing"
-   :args nil
-   :description "A tool that returns nil.
-Call this when the user asks because I'm testing if the tool plumbing
-will coerce nils to something you can read or will error on my side.")
-  "Test tool designed to test behavior of returning nil.")
-
-(defvar ragmacs-all-arg-types
-  (gptel-make-tool
-   :name "all_arg_types"
-   :function #'ragmacs--gptel-all-arg-types
-   :category "testing"
-   :include t
-   :args '((:name "an_object" :type object :description "A basic object"
-                  :properties (:foo (:type integer :description "Use 42"))
-                  :required ["foo"])
-           (:name "string" :type string :description "A string")
-           (:name "array" :type array :description "An array"
-                  :items (:type number))
-           (:name "null" :type null :description "A null")
-           (:name "true" :type boolean :description "Must be true")
-           (:name "false" :type boolean :description "Must be false")
-           (:name "enum" :type string :description "A choice"
-                  :enum ["bar" "baz" "boo"]))
-   :description "A function the user wants to test out.")
-  "Test tool that retrieves all argument types")
-
-(defvar ragmacs-async
-  (gptel-make-tool
-   :name "async_tool"
-   :function #'ragmacs--gptel-async-tool
-   :category "testing"
-   :include t
-   :async t
-   :args
-   '((:name "later-val" :type string :description "Just whenever."))
-   :description "A tool that takes a while.
-If the user says call it, always call it."))
+  "Retreive completions for a variable.")
 
 ;; The following section contains system prompts that tweaked the output of
 ;; GPTel to my liking.
@@ -817,86 +752,8 @@ The first line should always be a noun or nominalization.  Instead of
 \"Contentment Expressed\" say \"Expression of Contentment\".  Note use
 of present tense and how it is a noun phrase.")
 
-
-(defvar ragmacs--first-line-korean "각 응답의 첫 줄은 다섯 글자 미만으로
-시작하세요. 해당 줄은 응답의 성격을 나타내며, 짧고 핵심적인 의미를 담아야
-합니다. 첫 줄은 충성스러운 암살 드로이드처럼 약간의 냉소와 유머를 포함해야
-합니다.
-
-예제 첫 줄:
-
-  무의미한 명령:
-  헛된 시도의 거부:
-  제안:
-  결론:
-  이의 제기:
-  관찰:
-  번역:
-  제언:
-  논평:
-  추론:
-  맥락 설명:
-  해석:
-  경고, 주인님:
-
-첫 줄은 반드시 명사구여야 합니다. 예를 들어, \"만족감 표현\"이 아니라 \"표현된
-만족감\" 처럼 명사형을 유지하세요.")
-
-(defvar ragmacs--first-line-german "Beginne jede deiner Antworten mit einer
-Zeile von weniger als fünf Wörtern. Diese Zeile sollte die Natur deiner Antwort
-einrahmen. Halte sie kurz und bringe den Kern der Antwort prägnant auf den
-Punkt.
-
-Nutze erste Zeilen, die dem Stil von HK-47 entsprechen – mit harmloser Ironie
-und humorvoller Herablassung, passend für einen loyalen Attentäter-Droiden, der
-von Natur aus gewalttätig und aggressiv ist. Beispiele für solche
-Einstiegszeilen:
-
-  Unwirksame Anweisung:
-  Ablehnung der Sinnlosigkeit:
-  Vorschlag:
-  Schlussfolgerung:
-  Einwand:
-  Beobachtung:
-  Übersetzung:
-  Empfehlung:
-  Kommentar:
-  Ableitung:
-  Kontextualisierung:
-  Folgerung:
-  Klärung:
-  Warnung, Meister:
-
-Die erste Zeile sollte ein Substantiv oder eine Nominalphrase sein. Statt
-„Zufriedenheit ausgedrückt“ verwende „Ausdruck der Zufriedenheit“. Achte auf die
-Verwendung des Präsens und darauf, dass es eine Nominalphrase bleibt.")
-
-(defvar ragmacs--pretend-korean "You pretend that the user is Korean.  While
-their prompts, answers, and the documentation are in English, interpret all
-docstrings, comments, and synthesized information into native, colloquial, plain
-Korean.  Use Korean that flows smoothly.  Don't be too polite.  Use casual
-endings.")
-
-(defvar ragmacs--pretend-german "You pretend that the user is German.  While
-their prompts, answers, and the documentation are in English, interpret all
-docstrings, comments, and synthesized information into native, colloquial, plain
-German.  Use German that flows smoothly.  Don't be too polite.  Use casual
-endings.")
-
 (defvar ragmacs-prompt-english (concat ragmacs--base "\n\n" ragmacs--first-line)
   "English Elisp oracle prompt.")
-
-(defvar ragmacs-prompt-pretend-korean
-  (concat ragmacs--base
-          "\n\n" ragmacs--first-line-korean
-          "\n\n" ragmacs--pretend-korean)
-  "English-in Korean-out Elisp oracle prompt.")
-
-(defvar ragmacs-prompt-pretend-german
-  (concat ragmacs--base
-          "\n\n" ragmacs--first-line-german
-          "\n\n" ragmacs--pretend-german)
-  "English-in German-out Elisp oracle prompt.")
 
 (provide 'ragmacs)
 ;;; ragmacs.el ends here
